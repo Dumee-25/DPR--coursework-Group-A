@@ -5,3 +5,28 @@ date: "2025-02-13"
 output: html_document
 ---
 # Problem Statement
+
+#Import Libraries and Environment Setup 
+```{r}
+ library(tidyverse)
+```
+
+```{r}
+library(lubridate)
+library(scales)
+```
+
+#Loading Dataset
+```{r}
+raw_data <-read_tsv("C:/DPR/DPR--coursework-Group-A/msk_chord_2024_clinical_data (1).tsv")
+```
+
+```{r}
+dim(raw_data)
+```
+
+```{r}
+glimpse(raw_data)
+```
+
+ 
