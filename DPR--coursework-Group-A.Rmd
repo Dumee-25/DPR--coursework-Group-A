@@ -114,6 +114,7 @@ data_clean <- raw_data %>%
   )
 
 cat("Final N:", nrow(data_clean))
+```
 
 #Summarized Missing Data
 ```{r}
