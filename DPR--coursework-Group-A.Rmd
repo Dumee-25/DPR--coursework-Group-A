@@ -115,5 +115,30 @@ data_clean <- raw_data %>%
 
 cat("Final N:", nrow(data_clean))
 
+#Summarized Missing Data
+```{r}
+raw_data %>%
+  summarise(across(everything(),
+                   ~mean(is.na(.))*100)) %>%
+  pivot_longer(everything(),
+               names_to = "variable",
+               values_to = "pct_missing") %>%
+  arrange(desc(pct_missing))
+
+```
+
+```{r}
+cat("Initial N:", nrow(raw_data), "\n")
+cat("After filtering:", nrow(data_clean), "\n")
+
+```
+
+The original dataset contains missing values, inconsistent variables, and unstructured clinical information that may reduce the accuracy of survival analysis.
+
+Therefore, the data must be cleaned by selecting relevant variables, removing records with critical missing information, and transforming features into meaningful categories such as disease stage, age group, and metastasis status.
+
+This process ensures a reliable and structured dataset for analyzing cancer survival outcomes.
+
+
 
  
