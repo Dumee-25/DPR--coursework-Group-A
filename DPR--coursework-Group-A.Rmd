@@ -140,6 +140,59 @@ Therefore, the data must be cleaned by selecting relevant variables, removing re
 
 This process ensures a reliable and structured dataset for analyzing cancer survival outcomes.
 
+# Construction of Response Proxy
+
+A composite response index is defined using:
+
+* Survival quartiles
+* Disease extent
+* Metastatic presence
+
+Because formal treatment response labels are not available, a quantitative proxy index is created.
+
+Survival duration is discretized into quartiles, disease extent is converted into ordinal scores, and metastatic presence is incorporated as a binary factor. These components are combined into a weighted index scaled from 0 to 100 and further categorized into four qualitative response groups.
+
+```{r}
+qs <- quantile(
+  data_clean$survival_months,
+  probs = c(.25, .5, .75),
+  na.rm = TRUE
+)
+
+data_clean <- data_clean %>%
+  mutate(
+
+    survival_score = case_when(
+      survival_months >= qs[3] ~ 3,
+      survival_months >= qs[2] ~ 2,
+      survival_months >= qs[1] ~ 1,
+      TRUE ~ 0
+    ),
+
+    disease_score = recode(
+      disease_extent,
+      "Localized" = 2,
+      "Regional"  = 1,
+      "Distant"   = 0,
+      .default = 0
+    ),
+
+    mets_score = ifelse(has_metastasis, 0, 1),
+
+    response_index =
+      (survival_score * 3 +
+       disease_score  * 2 +
+       mets_score) / 14 * 100,
+
+    response_category = cut(
+      response_index,
+      breaks = c(-1, 25, 50, 75, 100),
+      labels = c("Poor", "Fair", "Good", "Excellent")
+    )
+  )
+
+```
+
 
 
  
