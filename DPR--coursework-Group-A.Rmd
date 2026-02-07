@@ -193,6 +193,111 @@ data_clean <- data_clean %>%
 
 ```
 
+# 5. Descriptive Statistics
+
+Summary statistics are calculated to characterize the cohort in terms of age, survival time, stage distribution, metastatic burden, and overall response scores.
+
+```{r}
+data_clean %>%
+  summarise(
+    n = n(),
+    mean_age = mean(age),
+    median_survival = median(survival_months),
+    pct_stage4 = mean(stage_binary == "Advanced"),
+    pct_mets = mean(has_metastasis),
+    mean_response = mean(response_index)
+  )
+
+```
+## 5.1 By cancer type
+
+```{r}
+data_clean %>%
+  group_by(cancer_simple) %>%
+  summarise(
+    n = n(),
+    median_survival = median(survival_months),
+    pct_stage4 = mean(stage_binary == "Advanced"),
+    mean_response = mean(response_index)
+  ) %>%
+  arrange(desc(mean_response))
+
+```
+
+## 5.2 Extended Descriptive Analysis
+
+The extended descriptive analysis provides a clear overview of the patient cohort by summarizing age, survival time, disease severity, and treatment response.
+
+Measures such as median, standard desiation, and interquartile range help understand both typical values and variability within the dataset.
+
+```{r}
+extended_stats <- data_clean %>%
+  summarise(
+    total_patients = n(),
+    
+    # Age statistics
+    mean_age = mean(age, na.rm = TRUE),
+    sd_age = sd(age, na.rm = TRUE),
+    min_age = min(age, na.rm = TRUE),
+    q1_age = quantile(age, 0.25, na.rm = TRUE),
+    median_age = median(age, na.rm = TRUE),
+    q3_age = quantile(age, 0.75, na.rm = TRUE),
+    max_age = max(age, na.rm = TRUE),
+    
+    # Survival statistics
+    mean_survival = mean(survival_months, na.rm = TRUE),
+    median_survival = median(survival_months, na.rm = TRUE),
+    iqr_survival = IQR(survival_months, na.rm = TRUE),
+    
+    # Disease severity
+    pct_advanced_stage = mean(stage_binary == "Advanced", na.rm = TRUE) * 100,
+    pct_metastasis = mean(has_metastasis, na.rm = TRUE) * 100,
+    
+    # Treatment response
+    mean_response = mean(response_index, na.rm = TRUE),
+    sd_response = sd(response_index, na.rm = TRUE)
+  )
+
+extended_stats
+```
+
+## 5.4 Deeper Analysis by Cancer Type
+
+The analysis by cancer type highlights differences in survival, stage distribution, and treatment response across groups.
+
+Some cancers show better outcomes and higher response rates, while others appear more aggressive with lower survival.
+
+```{r}
+extended_stats <- data_clean %>%
+  summarise(
+    total_patients = n(),
+    
+    # Age statistics
+    mean_age = mean(age, na.rm = TRUE),
+    sd_age = sd(age, na.rm = TRUE),
+    min_age = min(age, na.rm = TRUE),
+    q1_age = quantile(age, 0.25, na.rm = TRUE),
+    median_age = median(age, na.rm = TRUE),
+    q3_age = quantile(age, 0.75, na.rm = TRUE),
+    max_age = max(age, na.rm = TRUE),
+    
+    # Survival statistics
+    mean_survival = mean(survival_months, na.rm = TRUE),
+    median_survival = median(survival_months, na.rm = TRUE),
+    iqr_survival = IQR(survival_months, na.rm = TRUE),
+    
+    # Disease severity
+    pct_advanced_stage = mean(stage_binary == "Advanced", na.rm = TRUE) * 100,
+    pct_metastasis = mean(has_metastasis, na.rm = TRUE) * 100,
+    
+    # Treatment response
+    mean_response = mean(response_index, na.rm = TRUE),
+    sd_response = sd(response_index, na.rm = TRUE)
+  )
+
+extended_stats
+```
+
 
 
  
