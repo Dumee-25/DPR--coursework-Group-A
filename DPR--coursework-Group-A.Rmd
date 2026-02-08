@@ -359,5 +359,40 @@ p6 <- ggplot(data_clean, aes(x = response_category, fill = response_category)) +
 grid.arrange(p5, p6, ncol = 2)
 ```
 
+### Categorical Variables Distribution
+
+```{r fig.width=12, fig.height=8} 
+p7 <- ggplot(data_clean, aes(x = fct_infreq(cancer_simple), fill = cancer_simple)) + 
+  geom_bar() + 
+  labs(title = "Cancer Type Distribution", 
+       x = "Cancer Type", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") 
+
+p8 <- ggplot(data_clean, aes(x = stage_binary, fill = stage_binary)) + 
+  geom_bar() + 
+  labs(title = "Stage Distribution", 
+       x = "Stage", y = "Count") + 
+  scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
+p9 <- ggplot(data_clean, aes(x = sex, fill = sex)) + 
+  geom_bar() + 
+  labs(title = "Sex Distribution", 
+       x = "Sex", y = "Count") + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
+p10 <- ggplot(data_clean, aes(x = disease_extent, fill = disease_extent)) + 
+  geom_bar() + 
+  labs(title = "Disease Extent",  
+       x = "Extent", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") 
+
+grid.arrange(p7, p8, p9, p10, ncol = 2)
+```
+
 
  
