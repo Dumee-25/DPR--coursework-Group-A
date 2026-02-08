@@ -193,6 +193,64 @@ data_clean <- data_clean %>%
 
 ```
 
+# Exploratory Data Analysis (EDA)
+
+## Distribution of Key Variables
+
+### Age Distribution
+```{r fig.width=10, fig.height=4}
+p1 <- ggplot(data_clean, aes(x = age)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Age", x = "Age (years)", y = "Count") +
+  theme_minimal()
+
+p2 <- ggplot(data_clean, aes(x = age_group, fill = age_group)) +
+  geom_bar() +
+  labs(title = "Age Groups", x = "Age Group", y = "Count") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+### Survival Distribution
+```{r fig.width=10, fig.height=4}
+p3 <- ggplot(data_clean, aes(x = survival_months)) +
+  geom_histogram(bins = 40, fill = "darkgreen", color = "white") +
+  labs(title = "Distribution of Survival Time", 
+       x = "Survival (months)", y = "Count") +
+  theme_minimal()
+
+p4 <- ggplot(data_clean, aes(x = survival_months)) +
+  geom_density(fill = "darkgreen", alpha = 0.5) +
+  geom_vline(xintercept = median(data_clean$survival_months), 
+             linetype = "dashed", color = "red") +
+  labs(title = "Survival Density Plot", 
+       x = "Survival (months)", y = "Density") +
+  theme_minimal()
+
+grid.arrange(p3, p4, ncol = 2)
+```
+
+### Response Index Distribution
+```{r fig.width=10, fig.height=4}
+p5 <- ggplot(data_clean, aes(x = response_index)) +
+  geom_histogram(bins = 30, fill = "coral", color = "white") +
+  labs(title = "Distribution of Response Index", 
+       x = "Response Index (0-100)", y = "Count") +
+  theme_minimal()
+
+p6 <- ggplot(data_clean, aes(x = response_category, fill = response_category)) +
+  geom_bar() +
+  labs(title = "Response Categories", 
+       x = "Response Category", y = "Count") +
+  scale_fill_brewer(palette = "RdYlGn") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+grid.arrange(p5, p6, ncol = 2)
+```
+
 
 
  
