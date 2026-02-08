@@ -193,62 +193,109 @@ data_clean <- data_clean %>%
 
 ```
 
-# Exploratory Data Analysis (EDA)
+# 5. Descriptive Statistics
 
-## Distribution of Key Variables
+Summary statistics are calculated to characterize the cohort in terms of age, survival time, stage distribution, metastatic burden, and overall response scores.
 
-### Age Distribution
-```{r fig.width=10, fig.height=4}
-p1 <- ggplot(data_clean, aes(x = age)) +
-  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
-  labs(title = "Distribution of Age", x = "Age (years)", y = "Count") +
-  theme_minimal()
+```{r}
+data_clean %>%
+  summarise(
+    n = n(),
+    mean_age = mean(age),
+    median_survival = median(survival_months),
+    pct_stage4 = mean(stage_binary == "Advanced"),
+    pct_mets = mean(has_metastasis),
+    mean_response = mean(response_index)
+  )
 
-p2 <- ggplot(data_clean, aes(x = age_group, fill = age_group)) +
-  geom_bar() +
-  labs(title = "Age Groups", x = "Age Group", y = "Count") +
-  theme_minimal() +
-  theme(legend.position = "none")
+```
+## 5.1 By cancer type
 
-grid.arrange(p1, p2, ncol = 2)
+```{r}
+data_clean %>%
+  group_by(cancer_simple) %>%
+  summarise(
+    n = n(),
+    median_survival = median(survival_months),
+    pct_stage4 = mean(stage_binary == "Advanced"),
+    mean_response = mean(response_index)
+  ) %>%
+  arrange(desc(mean_response))
+
 ```
 
-### Survival Distribution
-```{r fig.width=10, fig.height=4}
-p3 <- ggplot(data_clean, aes(x = survival_months)) +
-  geom_histogram(bins = 40, fill = "darkgreen", color = "white") +
-  labs(title = "Distribution of Survival Time", 
-       x = "Survival (months)", y = "Count") +
-  theme_minimal()
+## 5.2 Extended Descriptive Analysis
 
-p4 <- ggplot(data_clean, aes(x = survival_months)) +
-  geom_density(fill = "darkgreen", alpha = 0.5) +
-  geom_vline(xintercept = median(data_clean$survival_months), 
-             linetype = "dashed", color = "red") +
-  labs(title = "Survival Density Plot", 
-       x = "Survival (months)", y = "Density") +
-  theme_minimal()
+The extended descriptive analysis provides a clear overview of the patient cohort by summarizing age, survival time, disease severity, and treatment response.
 
-grid.arrange(p3, p4, ncol = 2)
+Measures such as median, standard desiation, and interquartile range help understand both typical values and variability within the dataset.
+
+```{r}
+extended_stats <- data_clean %>%
+  summarise(
+    total_patients = n(),
+    
+    # Age statistics
+    mean_age = mean(age, na.rm = TRUE),
+    sd_age = sd(age, na.rm = TRUE),
+    min_age = min(age, na.rm = TRUE),
+    q1_age = quantile(age, 0.25, na.rm = TRUE),
+    median_age = median(age, na.rm = TRUE),
+    q3_age = quantile(age, 0.75, na.rm = TRUE),
+    max_age = max(age, na.rm = TRUE),
+    
+    # Survival statistics
+    mean_survival = mean(survival_months, na.rm = TRUE),
+    median_survival = median(survival_months, na.rm = TRUE),
+    iqr_survival = IQR(survival_months, na.rm = TRUE),
+    
+    # Disease severity
+    pct_advanced_stage = mean(stage_binary == "Advanced", na.rm = TRUE) * 100,
+    pct_metastasis = mean(has_metastasis, na.rm = TRUE) * 100,
+    
+    # Treatment response
+    mean_response = mean(response_index, na.rm = TRUE),
+    sd_response = sd(response_index, na.rm = TRUE)
+  )
+
+extended_stats
 ```
 
-### Response Index Distribution
-```{r fig.width=10, fig.height=4}
-p5 <- ggplot(data_clean, aes(x = response_index)) +
-  geom_histogram(bins = 30, fill = "coral", color = "white") +
-  labs(title = "Distribution of Response Index", 
-       x = "Response Index (0-100)", y = "Count") +
-  theme_minimal()
+## 5.4 Deeper Analysis by Cancer Type
 
-p6 <- ggplot(data_clean, aes(x = response_category, fill = response_category)) +
-  geom_bar() +
-  labs(title = "Response Categories", 
-       x = "Response Category", y = "Count") +
-  scale_fill_brewer(palette = "RdYlGn") +
-  theme_minimal() +
-  theme(legend.position = "none")
+The analysis by cancer type highlights differences in survival, stage distribution, and treatment response across groups.
 
-grid.arrange(p5, p6, ncol = 2)
+Some cancers show better outcomes and higher response rates, while others appear more aggressive with lower survival.
+
+```{r}
+extended_stats <- data_clean %>%
+  summarise(
+    total_patients = n(),
+    
+    # Age statistics
+    mean_age = mean(age, na.rm = TRUE),
+    sd_age = sd(age, na.rm = TRUE),
+    min_age = min(age, na.rm = TRUE),
+    q1_age = quantile(age, 0.25, na.rm = TRUE),
+    median_age = median(age, na.rm = TRUE),
+    q3_age = quantile(age, 0.75, na.rm = TRUE),
+    max_age = max(age, na.rm = TRUE),
+    
+    # Survival statistics
+    mean_survival = mean(survival_months, na.rm = TRUE),
+    median_survival = median(survival_months, na.rm = TRUE),
+    iqr_survival = IQR(survival_months, na.rm = TRUE),
+    
+    # Disease severity
+    pct_advanced_stage = mean(stage_binary == "Advanced", na.rm = TRUE) * 100,
+    pct_metastasis = mean(has_metastasis, na.rm = TRUE) * 100,
+    
+    # Treatment response
+    mean_response = mean(response_index, na.rm = TRUE),
+    sd_response = sd(response_index, na.rm = TRUE)
+  )
+
+extended_stats
 ```
 
 
