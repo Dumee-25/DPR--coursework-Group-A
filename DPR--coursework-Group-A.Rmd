@@ -452,6 +452,112 @@ ggplot(data_clean, aes(x = reorder(cancer_simple, response_index, median),
   theme_minimal() +
   theme(legend.position = "none")
 ```
+## Correlation Analysis
 
+### Correlation Matrix for Numerical Variables
+```{r fig.width=8, fig.height=6}
+# Select numerical variables
+num_vars <- data_clean %>%
+  select(age, survival_months, response_index, 
+         survival_score, disease_score, mets_score) %>%
+  na.omit()
+
+# Calculate correlation matrix
+cor_matrix <- cor(num_vars)
+
+# Plot correlation matrix
+corrplot(cor_matrix, method = "color", type = "upper", 
+         tl.col = "black", tl.srt = 45,
+         addCoef.col = "black", number.cex = 0.7,
+         title = "Correlation Matrix of Numerical Variables",
+         mar = c(0,0,2,0))
+```
+
+### Scatterplot: Age vs Response Index
+```{r fig.width=8, fig.height=5}
+ggplot(data_clean, aes(x = age, y = response_index, color = stage_binary)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "Age vs Response Index (by Stage)",
+       x = "Age (years)", y = "Response Index",
+       color = "Stage") +
+  theme_minimal()
+```
+
+### Scatterplot: Survival vs Response Index
+```{r fig.width=8, fig.height=5}
+ggplot(data_clean, aes(x = survival_months, y = response_index, 
+                       color = cancer_simple)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Survival Time vs Response Index (by Cancer Type)",
+       x = "Survival (months)", y = "Response Index",
+       color = "Cancer Type") +
+  theme_minimal()
+```
+
+# Validation of Response Proxy
+
+## Component Score Distributions
+```{r fig.width=12, fig.height=4}
+p13 <- ggplot(data_clean, aes(x = factor(survival_score))) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Survival Score Distribution",
+       x = "Survival Score (0-3)", y = "Count") +
+  theme_minimal()
+
+p14 <- ggplot(data_clean, aes(x = factor(disease_score))) +
+  geom_bar(fill = "darkgreen") +
+  labs(title = "Disease Score Distribution",
+       x = "Disease Score (0-2)", y = "Count") +
+  theme_minimal()
+
+p15 <- ggplot(data_clean, aes(x = factor(mets_score))) +
+  geom_bar(fill = "coral") +
+  labs(title = "Metastasis Score Distribution",
+       x = "Metastasis Score (0-1)", y = "Count") +
+  theme_minimal()
+
+grid.arrange(p13, p14, p15, ncol = 3)
+```
+
+## Relationship Between Component Scores and Response Index
+```{r fig.width=12, fig.height=4}
+p16 <- ggplot(data_clean, aes(x = factor(survival_score), y = response_index)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Response Index by Survival Score",
+       x = "Survival Score", y = "Response Index") +
+  theme_minimal()
+
+p17 <- ggplot(data_clean, aes(x = factor(disease_score), y = response_index)) +
+  geom_boxplot(fill = "darkgreen") +
+  labs(title = "Response Index by Disease Score",
+       x = "Disease Score", y = "Response Index") +
+  theme_minimal()
+
+p18 <- ggplot(data_clean, aes(x = factor(mets_score), y = response_index)) +
+  geom_boxplot(fill = "coral") +
+  labs(title = "Response Index by Metastasis Score",
+       x = "Metastasis Score", y = "Response Index") +
+  theme_minimal()
+
+grid.arrange(p16, p17, p18, ncol = 3)
+```
+
+## Component Contribution Analysis
+```{r}
+# Calculate correlation of each component with response index
+component_cors <- data_clean %>%
+  summarise(
+    survival_cor = cor(survival_score, response_index),
+    disease_cor = cor(disease_score, response_index),
+    mets_cor = cor(mets_score, response_index)
+  )
+
+kable(component_cors, digits = 3, 
+      caption = "Correlation of Component Scores with Response Index")
+```
+
+The weighting scheme (3:2:1 for survival:disease:metastasis) is validated by examining how each component correlates with the final response index. Higher correlations indicate stronger influence on the composite score.
 
  
