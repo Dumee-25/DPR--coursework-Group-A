@@ -359,5 +359,99 @@ p6 <- ggplot(data_clean, aes(x = response_category, fill = response_category)) +
 grid.arrange(p5, p6, ncol = 2)
 ```
 
+### Categorical Variables Distribution
+
+```{r fig.width=12, fig.height=8} 
+p7 <- ggplot(data_clean, aes(x = fct_infreq(cancer_simple), fill = cancer_simple)) + 
+  geom_bar() + 
+  labs(title = "Cancer Type Distribution", 
+       x = "Cancer Type", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") 
+
+p8 <- ggplot(data_clean, aes(x = stage_binary, fill = stage_binary)) + 
+  geom_bar() + 
+  labs(title = "Stage Distribution", 
+       x = "Stage", y = "Count") + 
+  scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
+p9 <- ggplot(data_clean, aes(x = sex, fill = sex)) + 
+  geom_bar() + 
+  labs(title = "Sex Distribution", 
+       x = "Sex", y = "Count") + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
+p10 <- ggplot(data_clean, aes(x = disease_extent, fill = disease_extent)) + 
+  geom_bar() + 
+  labs(title = "Disease Extent",  
+       x = "Extent", y = "Count") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") 
+
+grid.arrange(p7, p8, p9, p10, ncol = 2)
+```
+
+## Comparative Analysis
+
+### Survival by Cancer Type
+
+```{r fig.width=10, fig.height=6}
+ggplot(data_clean, aes(x = reorder(cancer_simple, survival_months, median), y = survival_months, fill = cancer_simple)) + 
+  geom_boxplot() + coord_flip() + 
+  labs(title = "Survival Time by Cancer Type", 
+       x = "Cancer Type", y = "Survival (months)") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
+```
+
+### Response Index by Stage and Metastasis
+
+```{r fig.width=10, fig.height=5}
+
+p11 <- ggplot(data_clean, aes(x = stage_binary, y = response_index, fill = stage_binary)) + 
+  geom_boxplot() + 
+  labs(title = "Response Index by Stage", 
+       x = "Stage", y = "Response Index") + scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
+p12 <- ggplot(data_clean, aes(x = has_metastasis, y = response_index, fill = has_metastasis)) + 
+  geom_boxplot() + 
+  labs(title = "Response Index by Metastasis Status", 
+       x = "Has Metastasis", y = "Response Index") +        theme_minimal() + 
+ theme(legend.position = "none") 
+
+grid.arrange(p11, p12, ncol = 2)
+
+```
+### Response Index by Age Group
+
+```{r fig.width=8, fig.height=5}
+ggplot(data_clean, aes(x = age_group, y = response_index, fill = age_group)) +
+  geom_boxplot() +
+  labs(title = "Response Index by Age Group",
+       x = "Age Group", y = "Response Index") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+### Response by Cancer Type
+
+```{r fig.width=10, fig.height=6}
+
+ggplot(data_clean, aes(x = reorder(cancer_simple, response_index, median), 
+                       y = response_index, fill = cancer_simple)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(title = "Response Index by Cancer Type",
+       x = "Cancer Type", y = "Response Index") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
 
  
