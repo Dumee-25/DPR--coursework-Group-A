@@ -1,563 +1,1084 @@
 ---
-title: "DS202.3 - Treatment Response Prediction"
-author: "Member 1 RKG Tharishika (ID), KADP Kumarapeli (36431)"
-date: "2025-02-13"
-output: html_document
+title: "DS202.3 - Data Programming In R: Coursework - Group A"
+author: "Member 1: KADP Kumarapeli (36431) , Member 2: RKG Tharishika (36508) "
+date: "14th February 2026"
+logo: "C:\\Users\\dumin\\Downloads\\Picture1.png"
+output:
+  pdf_document:
+    extra_dependencies: ["booktabs", "longtable", "array", "multirow", "wrapfig", "float", "colortbl", "pdflscape", "tabu", "threeparttable", "threeparttablex", "environ", "tcolorbox", "makecell", "xcolor"]
+  html_document: default
 ---
+\newpage
+
+# Project Resources
+
+* **GitHub Repository:** [Group_A Source Code](https://github.com/Dumee-25/DPR--coursework-Group-A)
+* **YouTube Video:** [Group_A Presentation](YOUR_YOUTUBE_LINK_HERE)
+
+\newpage
+
+
 # Problem Statement
 
-#Import Libraries and Environment Setup 
-```{r}
+Can demographic variables and basic clinical features explain variation in treatment response patterns?
+
+This notebook explores whether routinely collected demographic and clinical variables are associated with patterns of treatment response. Because direct treatment response labels are unavailable, a composite *response proxy* is constructed from available clinical and outcome variables.
+
+The analysis investigates:
+
+- Which variables in the dataset contain useful information?
+- How can we construct a meaningful response proxy?
+- What demographic and clinical features predict treatment response?
+
+\newpage
+
+# Import Libraries and Environment Setup
+
+```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(gridExtra)
 library(corrplot)
 library(ggpubr)
 library(knitr)
-```
-
-```{r}
 library(lubridate)
 library(scales)
 ```
 
-#Loading Dataset
+# Loading Dataset
+
 ```{r}
-raw_data <-read_tsv("msk_chord_2024_clinical_data.tsv")
+raw_data <- read_tsv("msk_chord_2024_clinical_data.tsv", show_col_types = FALSE)
 ```
 
+# Comprehensive Data Quality Assessment
+
+Before building our response proxy, we need to understand which variables actually contain useful information.
+
+## Dataset Overview
+
 ```{r}
-dim(raw_data)
+cat("Dataset dimensions:\n")
+cat("  Rows:", nrow(raw_data), "\n")
+cat("  Columns:", ncol(raw_data), "\n\n")
+
+cat("Column names:\n")
+for(i in 1:length(names(raw_data))) {
+  cat(sprintf("%2d. %s\n", i, names(raw_data)[i]))
+}
 ```
 
+## Comprehensive Missing Data Analysis
+
 ```{r}
-glimpse(raw_data)
+missing_analysis <- raw_data %>%
+  summarise(across(everything(), list(
+    n_missing = ~sum(is.na(.)),
+    pct_missing = ~mean(is.na(.)) * 100,
+    n_present = ~sum(!is.na(.))
+  ))) %>%
+  pivot_longer(everything(),
+               names_to = c("variable", ".value"),
+               names_pattern = "(.*)_(n_missing|pct_missing|n_present)$") %>%
+  arrange(desc(pct_missing)) 
+
+kable(missing_analysis, 
+      digits = 1,
+      col.names = c("Variable", "N Missing", "% Missing", "N Present"),
+      caption = "Complete Missing Data Analysis")
 ```
 
-# Problem definition
-Can demographic variables and basic clinical features explain variation in treatment response patterns?
+## Identifying Variables with Substantial Data
 
-This notebook explores whether routinely collected demographic and clinical variables are associated with patterns of treatment response.
-
-Because direct response measurements are unavailable, a composite *response proxy* is constructed using overall survival time, disease extent inferred from clinical notes, and recorded metastatic status.
-
-The key variables considered include:
-- Age
-- Sex
-- Cancer type
-- Stage
-
-# Data cleaning and selection
-
-Raw clinical data are imported from a tab-separated file and restricted to patients with valid staging, clinical summaries, and survival outcomes.
-
-Key demographic and disease variables are renamed for clarity, while additional features—such as binary stage grouping, inferred disease extent, age categories, and metastatic indicators—are engineered to support downstream analysis.
+Let's identify columns with <50% missing data (i.e., >50% present) as these are candidates for analysis and response proxy construction.
 
 ```{r}
-data_clean <- raw_data %>%
+useful_vars <- missing_analysis %>%
+  filter(pct_missing < 50) %>%
+  arrange(pct_missing)
+
+cat("Variables with >50% data present:\n")
+cat("================================\n\n")
+kable(useful_vars, digits = 1)
+
+cat("\n\nTotal useful variables:", nrow(useful_vars), "\n")
+```
+
+```{r fig.width=12, fig.height=6}
+ggplot(missing_analysis, aes(x = reorder(variable, pct_missing), y = pct_missing)) +
+  geom_col(aes(fill = pct_missing < 50), alpha = 0.8) +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "red", linewidth = 1) +
+  coord_flip() +
+  labs(title = "Data Completeness by Variable",
+       subtitle = "Red line indicates 50% threshold",
+       x = "Variable",
+       y = "Percentage Missing") +
+  scale_fill_manual(values = c("TRUE" = "darkgreen", "FALSE" = "gray70"),
+                    labels = c("TRUE" = ">50% present", "FALSE" = "<50% present")) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 7),
+        legend.title = element_blank())
+```
+
+## Data Type and Content Analysis
+
+Let's examine the actual content and data types of useful variables.
+
+```{r}
+# Focus on variables with substantial data
+useful_var_names <- useful_vars$variable
+
+cat("Detailed examination of useful variables:\n")
+cat("=========================================\n\n")
+
+for(var in useful_var_names) {
+  cat("---", var, "---\n")
+  cat("Type:", class(raw_data[[var]])[1], "\n")
+  
+  # For categorical variables, show unique values
+  if(is.character(raw_data[[var]]) || is.factor(raw_data[[var]])) {
+    n_unique <- length(unique(raw_data[[var]][!is.na(raw_data[[var]])]))
+    cat("Unique values:", n_unique, "\n")
+    if(n_unique <= 10) {
+      cat("Values:\n")
+      print(table(raw_data[[var]], useNA = "ifany"))
+    } else {
+      cat("Top 5 most common:\n")
+      print(head(sort(table(raw_data[[var]]), decreasing = TRUE), 5))
+    }
+  }
+  
+  # For numeric variables, show summary
+  if(is.numeric(raw_data[[var]])) {
+    cat("Summary statistics:\n")
+    print(summary(raw_data[[var]]))
+  }
+  
+  cat("\n")
+}
+```
+\newpage
+## Visual Exploration of Key Variables
+
+### Numeric Variables
+
+```{r fig.width=12, fig.height=8}
+# Identify numeric variables with good data
+numeric_vars <- useful_var_names[sapply(raw_data[useful_var_names], is.numeric)]
+
+if(length(numeric_vars) > 0) {
+  plots <- list()
+  for(i in 1:min(length(numeric_vars), 6)) {
+    var <- numeric_vars[i]
+    plots[[i]] <- ggplot(raw_data, aes(x = .data[[var]])) +
+      geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
+      labs(title = var, x = var, y = "Count") +
+      theme_minimal() +
+      theme(plot.title = element_text(size = 10))
+  }
+  do.call(grid.arrange, c(plots, ncol = 2))
+}
+```
+
+### Categorical Variables
+
+```{r fig.width=12, fig.height=10}
+# Identify categorical variables with reasonable number of categories
+char_vars <- useful_var_names[sapply(raw_data[useful_var_names], is.character)]
+manageable_char_vars <- char_vars[sapply(raw_data[char_vars], function(x) {
+  n_unique <- length(unique(x[!is.na(x)]))
+  n_unique >= 2 & n_unique <= 20
+})]
+
+if(length(manageable_char_vars) > 0) {
+  plots <- list()
+  for(i in 1:min(length(manageable_char_vars), 6)) {
+    var <- manageable_char_vars[i]
+    plots[[i]] <- ggplot(raw_data, aes(x = fct_infreq(fct_lump(.data[[var]], n = 10)))) +
+      geom_bar(fill = "coral", alpha = 0.7) +
+      labs(title = var, x = var, y = "Count") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+            plot.title = element_text(size = 10))
+  }
+  do.call(grid.arrange, c(plots, ncol = 2))
+}
+```
+\newpage
+
+# Response Proxy Construction
+
+Based on the comprehensive data exploration, we now construct a more robust response proxy using multiple clinical indicators.
+
+## Rationale for Variable Selection
+
+After examining data quality and clinical relevance, we select variables for the response proxy based on:
+
+1. **Data completeness** (>50% present)
+2. **Clinical relevance** to treatment outcomes
+3. **Variation** (not constant across patients)
+4. **Independence** (not perfectly correlated)
+
+## Data Preparation
+
+### Notebook Structure and Design Rationale
+
+This R notebook is structured to follow a transparent and reproducible analytical workflow:
+
+1. **Data Quality Assessment** – Comprehensive evaluation of missingness, variable types, and distributional properties.
+2. **Variable Selection** – Retention of variables with more than 50% data completeness to ensure analytical reliability.
+3. **Feature Engineering** – Construction of clinically meaningful derived variables such as stage grouping, disease extent categories, and survival-based indicators.
+4. **Response Proxy Construction** – Development of a composite response index combining survival, disease progression, and metastasis measures.
+5. **Validation of Proxy Components** – Examination of score distributions and internal consistency.
+6. **Exploratory Data Analysis (EDA)** – Systematic evaluation of demographic and clinical differences in the response index.
+
+The `tidyverse` framework was used to ensure readable and modular data transformation pipelines. The use of `dplyr` facilitates clear stepwise mutation and filtering operations, while `ggplot2` enables flexible and layered visualization for subgroup comparisons. Visualization-based validation was intentionally emphasized to maintain interpretability and avoid overfitting or unnecessary model complexity.
+
+Quartile-based survival scoring was selected because survival time is right-skewed, and quartiles provide a distributionally robust way to categorize outcomes without imposing parametric assumptions.
+\newpage
+
+```{r}
+# Select all useful variables for analysis
+data_selected <- raw_data %>%
   select(
+    # Demographics
     age = `Current Age`,
     sex = Sex,
+    
+    # Disease characteristics
     cancer_type = `Cancer Type`,
     stage = `Stage (Highest Recorded)`,
+    primary_site = `Primary Tumor Site`,
+    
+    # Clinical information
     clinical_summary = `Clinical Summary`,
+    sample_type = `Sample Type`,
+    
+    # Metastasis information
+    metastatic_site = `Metastatic Site`,
+    
+    # Outcomes
     survival_months = `Overall Survival (Months)`,
     survival_status = `Overall Survival Status`,
-    metastatic_site = `Metastatic Site`,
-    sample_type = `Sample Type`,
-    primary_site = `Primary Tumor Site`
-  ) %>%
+    
+    # Additional potentially useful columns
+    everything()
+  )
+
+# Filter to retain analyzable cases
+data_filtered <- data_selected %>%
   filter(
+    # Must have staging information
     stage %in% c("Stage 1-3", "Stage 4"),
-    !is.na(clinical_summary),
-    !is.na(survival_months)
-  ) %>%
+    # Must have survival data
+    !is.na(survival_months),
+    # Must have clinical information
+    !is.na(clinical_summary)
+  )
+
+cat("Data filtering summary:\n")
+cat("  Initial N:", nrow(data_selected), "\n")
+cat("  After filtering:", nrow(data_filtered), "\n")
+cat("  Retention rate:", round(nrow(data_filtered)/nrow(data_selected)*100, 1), "%\n")
+```
+\newpage
+
+## Feature Engineering
+
+```{r}
+data_clean <- data_filtered %>%
   mutate(
-
-    ## Binary stage
-    stage_binary = ifelse(
-      stage == "Stage 4",
-      "Advanced",
-      "Early"
-    ),
-
-    ## Disease extent inferred from notes
+    # ===== BINARY AND CATEGORICAL FEATURES =====
+    
+    # Stage grouping
+    stage_binary = ifelse(stage == "Stage 4", "Advanced", "Early"),
+    
+    # Disease extent from clinical notes 
     disease_extent = case_when(
-      str_detect(clinical_summary, "Distant|Metasta") ~ "Distant",
-      str_detect(clinical_summary, "Regional") ~ "Regional",
-      str_detect(clinical_summary, "Localized|In Situ") ~ "Localized",
-      TRUE ~ "Other"
+      str_detect(clinical_summary, regex("Distant|Metasta|Stage IV|Stage 4", ignore_case = TRUE)) ~ "Distant",
+      str_detect(clinical_summary, regex("Regional|lymph node|spread to|Stage III", ignore_case = TRUE)) ~ "Regional",
+      str_detect(clinical_summary, regex("Localized|In Situ|confined|Stage I|Stage II", ignore_case = TRUE)) ~ "Localized",
+      TRUE ~ "Unknown"
     ),
-
-    ## Metastasis indicator
-    has_metastasis = !is.na(metastatic_site) &
-                     metastatic_site != "",
-
-    ## Age groups
+    
+    # Metastasis presence
+    has_metastasis = !is.na(metastatic_site) & metastatic_site != "",
+    
+    # Sample type indicates disease progression
+    is_metastatic_sample = str_detect(sample_type, regex("Metasta", ignore_case = TRUE)),
+    
+    # Death event
+    died = str_detect(survival_status, "DECEASED"),
+    
+    # ===== AGE GROUPING =====
     age_group = cut(
       age,
       breaks = c(0, 50, 65, 100),
       labels = c("Under 50", "50–65", "Over 65"),
       include.lowest = TRUE
     ),
-
-    ## Event indicator
-    died = str_detect(survival_status, "DECEASED"),
-
-    ## Simplified cancer categories
-    cancer_simple = ifelse(
-      cancer_type %in% c(
-        "Breast Cancer",
-        "Non-Small Cell Lung Cancer",
-        "Colorectal Cancer",
-        "Prostate Cancer",
-        "Pancreatic Cancer"
-      ),
-      cancer_type,
-      "Other"
-    )
+    
+    # ===== CANCER TYPE GROUPING =====
+    cancer_simple = case_when(
+      cancer_type %in% c("Breast Cancer", "Breast Invasive Ductal Carcinoma") ~ "Breast",
+      cancer_type %in% c("Non-Small Cell Lung Cancer", "Lung Adenocarcinoma") ~ "Lung",
+      cancer_type %in% c("Colorectal Cancer", "Colon Adenocarcinoma") ~ "Colorectal",
+      cancer_type == "Prostate Cancer" ~ "Prostate",
+      cancer_type == "Pancreatic Cancer" ~ "Pancreatic",
+      TRUE ~ "Other"
+    ),
+    
+    # ===== SURVIVAL-BASED FEATURES =====
+    
+    # Survival status (alive vs deceased)
+    is_alive = !died,
+    
+    # Long-term survival (>2 years)
+    long_term_survivor = survival_months > 24,
+    
+    # Short-term survival (<6 months) - poor prognosis indicator
+    short_term_survival = survival_months < 6
   )
 
-cat("Final N:", nrow(data_clean))
+cat("Feature engineering complete.\n")
+cat("New features created: 13\n")
 ```
+\newpage
 
-#Summarized Missing Data
-```{r}
-raw_data %>%
-  summarise(across(everything(),
-                   ~mean(is.na(.))*100)) %>%
-  pivot_longer(everything(),
-               names_to = "variable",
-               values_to = "pct_missing") %>%
-  arrange(desc(pct_missing))
+## Response Proxy Construction
 
-```
+We'll create a multi-component response score that incorporates:
 
-```{r}
-cat("Initial N:", nrow(raw_data), "\n")
-cat("After filtering:", nrow(data_clean), "\n")
+1. **Survival duration** (quartile-based, weight: 4)
+2. **Survival status** (alive/deceased, weight: 2)
+3. **Disease extent** (localized/regional/distant, weight: 3)
+4. **Metastasis presence** (binary, weight: 2)
+5. **Sample type** (primary/metastatic, weight: 1)
 
-```
-
-The original dataset contains missing values, inconsistent variables, and unstructured clinical information that may reduce the accuracy of survival analysis.
-
-Therefore, the data must be cleaned by selecting relevant variables, removing records with critical missing information, and transforming features into meaningful categories such as disease stage, age group, and metastasis status.
-
-This process ensures a reliable and structured dataset for analyzing cancer survival outcomes.
-
-# Construction of Response Proxy
-
-A composite response index is defined using:
-
-* Survival quartiles
-* Disease extent
-* Metastatic presence
-
-Because formal treatment response labels are not available, a quantitative proxy index is created.
-
-Survival duration is discretized into quartiles, disease extent is converted into ordinal scores, and metastatic presence is incorporated as a binary factor. These components are combined into a weighted index scaled from 0 to 100 and further categorized into four qualitative response groups.
+This gives a total possible score of 0-12, which we'll scale to 0-100.
 
 ```{r}
-qs <- quantile(
+# Calculate survival quartiles
+survival_quartiles <- quantile(
   data_clean$survival_months,
   probs = c(.25, .5, .75),
   na.rm = TRUE
 )
 
+cat("Survival Distribution:\n")
+cat("  Q1 (25%):", round(survival_quartiles[1], 1), "months\n")
+cat("  Q2 (50%):", round(survival_quartiles[2], 1), "months\n")
+cat("  Q3 (75%):", round(survival_quartiles[3], 1), "months\n")
+cat("  Mean:", round(mean(data_clean$survival_months), 1), "months\n\n")
+
+# Create component scores
 data_clean <- data_clean %>%
   mutate(
-
-    survival_score = case_when(
-      survival_months >= qs[3] ~ 3,
-      survival_months >= qs[2] ~ 2,
-      survival_months >= qs[1] ~ 1,
-      TRUE ~ 0
+    # COMPONENT 1: Survival duration (0-4 points, weight: 4)
+    survival_duration_score = case_when(
+      survival_months >= survival_quartiles[3] ~ 4,  # Top quartile
+      survival_months >= survival_quartiles[2] ~ 3,  # 50-75th percentile
+      survival_months >= survival_quartiles[1] ~ 2,  # 25-50th percentile
+      survival_months >= 6 ~ 1,                      # 6+ months but below Q1
+      TRUE ~ 0                                       # < 6 months
     ),
-
-    disease_score = recode(
-      disease_extent,
-      "Localized" = 2,
-      "Regional"  = 1,
-      "Distant"   = 0,
-      .default = 0
+    
+    # COMPONENT 2: Survival status (0-2 points, weight: 2)
+    survival_status_score = case_when(
+      is_alive ~ 2,           # Still alive
+      died & survival_months >= 24 ~ 1,  # Died but survived >2 years
+      TRUE ~ 0                # Died within 2 years
     ),
-
-    mets_score = ifelse(has_metastasis, 0, 1),
-
-    response_index =
-      (survival_score * 3 +
-       disease_score  * 2 +
-       mets_score) / 14 * 100,
-
+    
+    # COMPONENT 3: Disease extent (0-3 points, weight: 3)
+    disease_extent_score = case_when(
+      disease_extent == "Localized" ~ 3,
+      disease_extent == "Regional" ~ 2,
+      disease_extent == "Distant" ~ 0,
+      TRUE ~ 1  # Unknown
+    ),
+    
+    # COMPONENT 4: Metastasis (0-2 points, weight: 2)
+    metastasis_score = case_when(
+      !has_metastasis ~ 2,              # No metastasis
+      has_metastasis ~ 0                # Has metastasis
+    ),
+    
+    # COMPONENT 5: Sample type (0-1 point, weight: 1)
+    sample_score = case_when(
+      !is_metastatic_sample ~ 1,        # Primary sample
+      is_metastatic_sample ~ 0          # Metastatic sample
+    ),
+    
+    # TOTAL SCORE (sum of all components)
+    total_score = survival_duration_score + survival_status_score + 
+                  disease_extent_score + metastasis_score + sample_score,
+    
+    # Scale to 0-100
+    response_index = (total_score / 12) * 100,
+    
+    # Categorical response
     response_category = cut(
       response_index,
-      breaks = c(-1, 25, 50, 75, 100),
+      breaks = c(-1, 30, 55, 75, 100),
       labels = c("Poor", "Fair", "Good", "Excellent")
     )
   )
 
+cat("Response proxy construction complete.\n")
+cat("Maximum possible score: 12\n")
+cat("Score range: 0-100 (scaled)\n")
 ```
+\newpage
+## Response Proxy Validation
 
-# 5. Descriptive Statistics
+### Component Score Distributions
 
-Summary statistics are calculated to characterize the cohort in terms of age, survival time, stage distribution, metastatic burden, and overall response scores.
-
-```{r}
-data_clean %>%
-  summarise(
-    n = n(),
-    mean_age = mean(age),
-    median_survival = median(survival_months),
-    pct_stage4 = mean(stage_binary == "Advanced"),
-    pct_mets = mean(has_metastasis),
-    mean_response = mean(response_index)
-  )
-
-```
-## 5.1 By cancer type
-
-```{r}
-data_clean %>%
-  group_by(cancer_simple) %>%
-  summarise(
-    n = n(),
-    median_survival = median(survival_months),
-    pct_stage4 = mean(stage_binary == "Advanced"),
-    mean_response = mean(response_index)
-  ) %>%
-  arrange(desc(mean_response))
-
-```
-
-## 5.2 Extended Descriptive Analysis
-
-The extended descriptive analysis provides a clear overview of the patient cohort by summarizing age, survival time, disease severity, and treatment response.
-
-Measures such as median, standard desiation, and interquartile range help understand both typical values and variability within the dataset.
-
-```{r}
-extended_stats <- data_clean %>%
-  summarise(
-    total_patients = n(),
-    
-    # Age statistics
-    mean_age = mean(age, na.rm = TRUE),
-    sd_age = sd(age, na.rm = TRUE),
-    min_age = min(age, na.rm = TRUE),
-    q1_age = quantile(age, 0.25, na.rm = TRUE),
-    median_age = median(age, na.rm = TRUE),
-    q3_age = quantile(age, 0.75, na.rm = TRUE),
-    max_age = max(age, na.rm = TRUE),
-    
-    # Survival statistics
-    mean_survival = mean(survival_months, na.rm = TRUE),
-    median_survival = median(survival_months, na.rm = TRUE),
-    iqr_survival = IQR(survival_months, na.rm = TRUE),
-    
-    # Disease severity
-    pct_advanced_stage = mean(stage_binary == "Advanced", na.rm = TRUE) * 100,
-    pct_metastasis = mean(has_metastasis, na.rm = TRUE) * 100,
-    
-    # Treatment response
-    mean_response = mean(response_index, na.rm = TRUE),
-    sd_response = sd(response_index, na.rm = TRUE)
-  )
-
-extended_stats
-```
-
-## 5.4 Deeper Analysis by Cancer Type
-
-The analysis by cancer type highlights differences in survival, stage distribution, and treatment response across groups.
-
-Some cancers show better outcomes and higher response rates, while others appear more aggressive with lower survival.
-
-```{r}
-extended_stats <- data_clean %>%
-  summarise(
-    total_patients = n(),
-    
-    # Age statistics
-    mean_age = mean(age, na.rm = TRUE),
-    sd_age = sd(age, na.rm = TRUE),
-    min_age = min(age, na.rm = TRUE),
-    q1_age = quantile(age, 0.25, na.rm = TRUE),
-    median_age = median(age, na.rm = TRUE),
-    q3_age = quantile(age, 0.75, na.rm = TRUE),
-    max_age = max(age, na.rm = TRUE),
-    
-    # Survival statistics
-    mean_survival = mean(survival_months, na.rm = TRUE),
-    median_survival = median(survival_months, na.rm = TRUE),
-    iqr_survival = IQR(survival_months, na.rm = TRUE),
-    
-    # Disease severity
-    pct_advanced_stage = mean(stage_binary == "Advanced", na.rm = TRUE) * 100,
-    pct_metastasis = mean(has_metastasis, na.rm = TRUE) * 100,
-    
-    # Treatment response
-    mean_response = mean(response_index, na.rm = TRUE),
-    sd_response = sd(response_index, na.rm = TRUE)
-  )
-
-extended_stats
-```
-# Exploratory Data Analysis (EDA)
-
-## Distribution of Key Variables
-
-### Age Distribution
-```{r fig.width=10, fig.height=4}
-p1 <- ggplot(data_clean, aes(x = age)) +
-  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
-  labs(title = "Distribution of Age", x = "Age (years)", y = "Count") +
+```{r fig.width=12, fig.height=8}
+p1 <- ggplot(data_clean, aes(x = factor(survival_duration_score))) +
+  geom_bar(fill = "steelblue", alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Survival Duration Score (0-4)",
+       subtitle = "Based on survival quartiles",
+       x = "Score", y = "Count") +
   theme_minimal()
 
-p2 <- ggplot(data_clean, aes(x = age_group, fill = age_group)) +
-  geom_bar() +
-  labs(title = "Age Groups", x = "Age Group", y = "Count") +
-  theme_minimal() +
-  theme(legend.position = "none")
+p2 <- ggplot(data_clean, aes(x = factor(survival_status_score))) +
+  geom_bar(fill = "darkgreen", alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Survival Status Score (0-2)",
+       subtitle = "Alive or long-term survival",
+       x = "Score", y = "Count") +
+  theme_minimal()
 
-grid.arrange(p1, p2, ncol = 2)
+p3 <- ggplot(data_clean, aes(x = factor(disease_extent_score))) +
+  geom_bar(fill = "purple", alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Disease Extent Score (0-3)",
+       subtitle = "Localized/Regional/Distant",
+       x = "Score", y = "Count") +
+  theme_minimal()
+
+p4 <- ggplot(data_clean, aes(x = factor(metastasis_score))) +
+  geom_bar(fill = "coral", alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Metastasis Score (0-2)",
+       subtitle = "Absence of metastasis",
+       x = "Score", y = "Count") +
+  theme_minimal()
+
+p5 <- ggplot(data_clean, aes(x = factor(sample_score))) +
+  geom_bar(fill = "orange", alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Sample Type Score (0-1)",
+       subtitle = "Primary vs Metastatic",
+       x = "Score", y = "Count") +
+  theme_minimal()
+
+p6 <- ggplot(data_clean, aes(x = total_score)) +
+  geom_histogram(binwidth = 1, fill = "navy", alpha = 0.8, color = "white") +
+  geom_vline(xintercept = mean(data_clean$total_score), 
+             color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Total Response Score (0-12)",
+       subtitle = paste("Mean:", round(mean(data_clean$total_score), 2)),
+       x = "Total Score", y = "Count") +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 2)
 ```
 
-### Survival Distribution
-```{r fig.width=10, fig.height=4}
-p3 <- ggplot(data_clean, aes(x = survival_months)) +
-  geom_histogram(bins = 40, fill = "darkgreen", color = "white") +
-  labs(title = "Distribution of Survival Time", 
-       x = "Survival (months)", y = "Count") +
-  theme_minimal()
+### Component Contribution Analysis
 
-p4 <- ggplot(data_clean, aes(x = survival_months)) +
-  geom_density(fill = "darkgreen", alpha = 0.5) +
-  geom_vline(xintercept = median(data_clean$survival_months), 
-             linetype = "dashed", color = "red") +
-  labs(title = "Survival Density Plot", 
-       x = "Survival (months)", y = "Density") +
-  theme_minimal()
+```{r}
+# Calculate correlation of each component with total score
+component_correlations <- data_clean %>%
+  summarise(
+    survival_duration = cor(survival_duration_score, response_index),
+    survival_status = cor(survival_status_score, response_index),
+    disease_extent = cor(disease_extent_score, response_index),
+    metastasis = cor(metastasis_score, response_index),
+    sample_type = cor(sample_score, response_index)
+  )
 
-grid.arrange(p3, p4, ncol = 2)
+kable(t(component_correlations), 
+      digits = 3,
+      col.names = "Correlation with Response Index",
+      caption = "Component Contribution to Response Proxy")
 ```
 
 ### Response Index Distribution
-```{r fig.width=10, fig.height=4}
-p5 <- ggplot(data_clean, aes(x = response_index)) +
-  geom_histogram(bins = 30, fill = "coral", color = "white") +
-  labs(title = "Distribution of Response Index", 
-       x = "Response Index (0-100)", y = "Count") +
+
+```{r fig.width=12, fig.height=5}
+p7 <- ggplot(data_clean, aes(x = response_index)) +
+  geom_histogram(bins = 30, fill = "darkblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = median(data_clean$response_index), 
+             color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Response Index Distribution (0-100 scale)",
+       subtitle = paste("Median:", round(median(data_clean$response_index), 1), 
+                       "| Mean:", round(mean(data_clean$response_index), 1)),
+       x = "Response Index", y = "Count") +
   theme_minimal()
 
-p6 <- ggplot(data_clean, aes(x = response_category, fill = response_category)) +
-  geom_bar() +
-  labs(title = "Response Categories", 
+p8 <- ggplot(data_clean, aes(x = response_category, fill = response_category)) +
+  geom_bar(alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Response Category Distribution",
        x = "Response Category", y = "Count") +
   scale_fill_brewer(palette = "RdYlGn") +
   theme_minimal() +
   theme(legend.position = "none")
 
-grid.arrange(p5, p6, ncol = 2)
+grid.arrange(p7, p8, ncol = 2)
 ```
 
-### Categorical Variables Distribution
+```{r}
+cat("Response Category Breakdown:\n")
+response_breakdown <- data_clean %>%
+  count(response_category) %>%
+  mutate(percentage = n / sum(n) * 100)
 
-```{r fig.width=12, fig.height=8} 
-p7 <- ggplot(data_clean, aes(x = fct_infreq(cancer_simple), fill = cancer_simple)) + 
-  geom_bar() + 
-  labs(title = "Cancer Type Distribution", 
-       x = "Cancer Type", y = "Count") + 
-  theme_minimal() + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") 
-
-p8 <- ggplot(data_clean, aes(x = stage_binary, fill = stage_binary)) + 
-  geom_bar() + 
-  labs(title = "Stage Distribution", 
-       x = "Stage", y = "Count") + 
-  scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) + 
-  theme_minimal() + 
-  theme(legend.position = "none") 
-
-p9 <- ggplot(data_clean, aes(x = sex, fill = sex)) + 
-  geom_bar() + 
-  labs(title = "Sex Distribution", 
-       x = "Sex", y = "Count") + 
-  theme_minimal() + 
-  theme(legend.position = "none") 
-
-p10 <- ggplot(data_clean, aes(x = disease_extent, fill = disease_extent)) + 
-  geom_bar() + 
-  labs(title = "Disease Extent",  
-       x = "Extent", y = "Count") + 
-  theme_minimal() + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") 
-
-grid.arrange(p7, p8, p9, p10, ncol = 2)
+kable(response_breakdown, 
+      digits = 1,
+      col.names = c("Category", "Count", "Percentage"),
+      caption = "Response Category Distribution")
 ```
 
-## Comparative Analysis
+### Relationship Between Components and Final Response
 
-### Survival by Cancer Type
+```{r fig.width=12, fig.height=8}
+p9 <- ggplot(data_clean, aes(x = factor(survival_duration_score), y = response_index)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7) +
+  labs(title = "Response Index by Survival Duration Score",
+       x = "Survival Duration Score", y = "Response Index") +
+  theme_minimal()
 
-```{r fig.width=10, fig.height=6}
-ggplot(data_clean, aes(x = reorder(cancer_simple, survival_months, median), y = survival_months, fill = cancer_simple)) + 
-  geom_boxplot() + coord_flip() + 
-  labs(title = "Survival Time by Cancer Type", 
-       x = "Cancer Type", y = "Survival (months)") + 
-  theme_minimal() + 
-  theme(legend.position = "none")
+p10 <- ggplot(data_clean, aes(x = factor(survival_status_score), y = response_index)) +
+  geom_boxplot(fill = "darkgreen", alpha = 0.7) +
+  labs(title = "Response Index by Survival Status Score",
+       x = "Survival Status Score", y = "Response Index") +
+  theme_minimal()
+
+p11 <- ggplot(data_clean, aes(x = factor(disease_extent_score), y = response_index)) +
+  geom_boxplot(fill = "purple", alpha = 0.7) +
+  labs(title = "Response Index by Disease Extent Score",
+       x = "Disease Extent Score", y = "Response Index") +
+  theme_minimal()
+
+p12 <- ggplot(data_clean, aes(x = factor(metastasis_score), y = response_index)) +
+  geom_boxplot(fill = "coral", alpha = 0.7) +
+  labs(title = "Response Index by Metastasis Score",
+       x = "Metastasis Score", y = "Response Index") +
+  theme_minimal()
+
+grid.arrange(p9, p10, p11, p12, ncol = 2)
+```
+\newpage
+
+# Exploratory Data Analysis
+
+## Overall Cohort Characteristics
+
+```{r}
+overall_summary <- data_clean %>%
+  summarise(
+    total_patients = n(),
+    
+    # Demographics
+    mean_age = mean(age, na.rm = TRUE),
+    sd_age = sd(age, na.rm = TRUE),
+    median_age = median(age, na.rm = TRUE),
+    
+    # Survival
+    mean_survival = mean(survival_months, na.rm = TRUE),
+    median_survival = median(survival_months, na.rm = TRUE),
+    sd_survival = sd(survival_months, na.rm = TRUE),
+    
+    # Disease characteristics
+    pct_advanced = mean(stage_binary == "Advanced") * 100,
+    pct_metastasis = mean(has_metastasis) * 100,
+    pct_deceased = mean(died) * 100,
+    pct_long_survivors = mean(long_term_survivor) * 100,
+    
+    # Response
+    mean_response = mean(response_index),
+    median_response = median(response_index),
+    sd_response = sd(response_index)
+  )
+
+kable(t(overall_summary), 
+      digits = 1,
+      col.names = "Value",
+      caption = "Overall Cohort Characteristics")
 ```
 
-### Response Index by Stage and Metastasis
+## Key Variable Distributions
 
-```{r fig.width=10, fig.height=5}
+### Age and Survival
 
-p11 <- ggplot(data_clean, aes(x = stage_binary, y = response_index, fill = stage_binary)) + 
-  geom_boxplot() + 
-  labs(title = "Response Index by Stage", 
-       x = "Stage", y = "Response Index") + scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) + 
-  theme_minimal() + 
-  theme(legend.position = "none") 
+```{r fig.width=12, fig.height=4}
+p13 <- ggplot(data_clean, aes(x = age)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = median(data_clean$age), 
+             color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Age Distribution",
+       x = "Age (years)", y = "Count") +
+  theme_minimal()
 
-p12 <- ggplot(data_clean, aes(x = has_metastasis, y = response_index, fill = has_metastasis)) + 
-  geom_boxplot() + 
-  labs(title = "Response Index by Metastasis Status", 
-       x = "Has Metastasis", y = "Response Index") +        theme_minimal() + 
- theme(legend.position = "none") 
+p14 <- ggplot(data_clean, aes(x = survival_months)) +
+  geom_histogram(bins = 40, fill = "darkgreen", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = median(data_clean$survival_months), 
+             color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Survival Time Distribution",
+       x = "Survival (months)", y = "Count") +
+  theme_minimal()
 
-grid.arrange(p11, p12, ncol = 2)
-
-```
-### Response Index by Age Group
-
-```{r fig.width=8, fig.height=5}
-ggplot(data_clean, aes(x = age_group, y = response_index, fill = age_group)) +
-  geom_boxplot() +
-  labs(title = "Response Index by Age Group",
-       x = "Age Group", y = "Response Index") +
+p15 <- ggplot(data_clean, aes(x = age_group, fill = age_group)) +
+  geom_bar(alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Age Group Distribution",
+       x = "Age Group", y = "Count") +
+  scale_fill_brewer(palette = "Blues") +
   theme_minimal() +
   theme(legend.position = "none")
 
+grid.arrange(p13, p14, p15, ncol = 3)
+```
+
+### Categorical Clinical Variables
+
+```{r fig.width=12, fig.height=8}
+p16 <- ggplot(data_clean, aes(x = fct_infreq(cancer_simple), fill = cancer_simple)) +
+  geom_bar(alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5, size = 3) +
+  labs(title = "Cancer Type Distribution",
+       x = "Cancer Type", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+p17 <- ggplot(data_clean, aes(x = stage_binary, fill = stage_binary)) +
+  geom_bar(alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Stage Distribution",
+       x = "Stage", y = "Count") +
+  scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+p18 <- ggplot(data_clean, aes(x = fct_infreq(disease_extent), fill = disease_extent)) +
+  geom_bar(alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Disease Extent Distribution",
+       x = "Disease Extent", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+p19 <- ggplot(data_clean, aes(x = sex, fill = sex)) +
+  geom_bar(alpha = 0.8) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Sex Distribution",
+       x = "Sex", y = "Count") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+grid.arrange(p16, p17, p18, p19, ncol = 2)
+```
+
+## Response by Demographic Factors
+
+### Response by Age Group
+
+```{r fig.width=10, fig.height=5}
+ggplot(data_clean, aes(x = age_group, y = response_index, fill = age_group)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.1, size = 0.5) +
+  labs(title = "Response Index by Age Group",
+       x = "Age Group", y = "Response Index (0-100)") +
+  scale_fill_brewer(palette = "YlOrRd") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+age_response <- data_clean %>%
+  group_by(age_group) %>%
+  summarise(
+    n = n(),
+    mean_response = mean(response_index),
+    median_response = median(response_index),
+    sd_response = sd(response_index)
+  )
+
+kable(age_response, digits = 1, caption = "Response by Age Group")
+```
+
+### Response by Sex
+
+```{r fig.width=8, fig.height=5}
+ggplot(data_clean, aes(x = sex, y = response_index, fill = sex)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.1, size = 0.5) +
+  labs(title = "Response Index by Sex",
+       x = "Sex", y = "Response Index (0-100)") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+sex_response <- data_clean %>%
+  group_by(sex) %>%
+  summarise(
+    n = n(),
+    mean_response = mean(response_index),
+    median_response = median(response_index),
+    sd_response = sd(response_index)
+  )
+
+kable(sex_response, digits = 1, caption = "Response by Sex")
+```
+
+## Response by Clinical Factors
+
+### Response by Stage
+
+```{r fig.width=10, fig.height=5}
+ggplot(data_clean, aes(x = stage_binary, y = response_index, fill = stage_binary)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.1, size = 0.5) +
+  labs(title = "Response Index by Disease Stage",
+       subtitle = "Clear separation between early and advanced stage",
+       x = "Stage", y = "Response Index (0-100)") +
+  scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+stage_response <- data_clean %>%
+  group_by(stage_binary) %>%
+  summarise(
+    n = n(),
+    mean_response = mean(response_index),
+    median_response = median(response_index),
+    sd_response = sd(response_index)
+  )
+
+kable(stage_response, digits = 1, caption = "Response by Stage")
+```
+
+### Response by Disease Extent
+
+```{r fig.width=10, fig.height=5}
+ggplot(data_clean, aes(x = fct_reorder(disease_extent, response_index, median), 
+                       y = response_index, fill = disease_extent)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.1, size = 0.5) +
+  labs(title = "Response Index by Disease Extent",
+       subtitle = "Ordered by median response",
+       x = "Disease Extent", y = "Response Index (0-100)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+extent_response <- data_clean %>%
+  group_by(disease_extent) %>%
+  summarise(
+    n = n(),
+    mean_response = mean(response_index),
+    median_response = median(response_index),
+    sd_response = sd(response_index)
+  ) %>%
+  arrange(desc(mean_response))
+
+kable(extent_response, digits = 1, caption = "Response by Disease Extent")
+```
+
+### Response by Metastasis Status
+
+```{r fig.width=8, fig.height=5}
+ggplot(data_clean, aes(x = has_metastasis, y = response_index, fill = has_metastasis)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.1, size = 0.5) +
+  labs(title = "Response Index by Metastasis Status",
+       x = "Has Metastasis", y = "Response Index (0-100)") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+mets_response <- data_clean %>%
+  group_by(has_metastasis) %>%
+  summarise(
+    n = n(),
+    mean_response = mean(response_index),
+    median_response = median(response_index),
+    sd_response = sd(response_index)
+  )
+
+kable(mets_response, digits = 1, caption = "Response by Metastasis Status")
 ```
 
 ### Response by Cancer Type
 
 ```{r fig.width=10, fig.height=6}
-
-ggplot(data_clean, aes(x = reorder(cancer_simple, response_index, median), 
+ggplot(data_clean, aes(x = reorder(cancer_simple, response_index, median),
                        y = response_index, fill = cancer_simple)) +
-  geom_boxplot() +
+  geom_boxplot(alpha = 0.7) +
   coord_flip() +
   labs(title = "Response Index by Cancer Type",
-       x = "Cancer Type", y = "Response Index") +
+       subtitle = "Ordered by median response",
+       x = "Cancer Type", y = "Response Index (0-100)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+cancer_response <- data_clean %>%
+  group_by(cancer_simple) %>%
+  summarise(
+    n = n(),
+    mean_response = mean(response_index),
+    median_response = median(response_index),
+    sd_response = sd(response_index),
+    mean_survival = mean(survival_months),
+    pct_deceased = mean(died) * 100
+  ) %>%
+  arrange(desc(mean_response))
+
+kable(cancer_response, digits = 1, caption = "Response by Cancer Type")
+```
+
+### Survival Time by Cancer Type
+
+```{r fig.width=10, fig.height=6}
+ggplot(data_clean, aes(x = reorder(cancer_simple, survival_months, median),
+                       y = survival_months, fill = cancer_simple)) +
+  geom_boxplot(alpha = 0.7) +
+  coord_flip() +
+  labs(title = "Survival Time by Cancer Type",
+       subtitle = "Ordered by median survival",
+       x = "Cancer Type", y = "Survival (months)") +
   theme_minimal() +
   theme(legend.position = "none")
 ```
-## Correlation Analysis
 
-### Correlation Matrix for Numerical Variables
-```{r fig.width=8, fig.height=6}
-# Select numerical variables
-num_vars <- data_clean %>%
-  select(age, survival_months, response_index, 
-         survival_score, disease_score, mets_score) %>%
-  na.omit()
+## Continuous Variable Relationships
 
-# Calculate correlation matrix
-cor_matrix <- cor(num_vars)
+### Age vs Response
 
-# Plot correlation matrix
-corrplot(cor_matrix, method = "color", type = "upper", 
-         tl.col = "black", tl.srt = 45,
-         addCoef.col = "black", number.cex = 0.7,
-         title = "Correlation Matrix of Numerical Variables",
-         mar = c(0,0,2,0))
-```
-
-### Scatterplot: Age vs Response Index
-```{r fig.width=8, fig.height=5}
+```{r fig.width=10, fig.height=5}
 ggplot(data_clean, aes(x = age, y = response_index, color = stage_binary)) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", se = TRUE) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
   labs(title = "Age vs Response Index (by Stage)",
-       x = "Age (years)", y = "Response Index",
+       x = "Age (years)", y = "Response Index (0-100)",
        color = "Stage") +
+  scale_color_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) +
   theme_minimal()
 ```
 
-### Scatterplot: Survival vs Response Index
-```{r fig.width=8, fig.height=5}
-ggplot(data_clean, aes(x = survival_months, y = response_index, 
-                       color = cancer_simple)) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", se = FALSE) +
+### Survival vs Response
+
+```{r fig.width=10, fig.height=5}
+ggplot(data_clean, aes(x = survival_months, y = response_index, color = cancer_simple)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1) +
   labs(title = "Survival Time vs Response Index (by Cancer Type)",
-       x = "Survival (months)", y = "Response Index",
+       x = "Survival (months)", y = "Response Index (0-100)",
        color = "Cancer Type") +
   theme_minimal()
 ```
+\newpage
+## Correlation Analysis
 
-# Validation of Response Proxy
+```{r fig.width=9, fig.height=7}
+# Select numeric variables for correlation
+numeric_data <- data_clean %>%
+  select(age, survival_months, response_index,
+         survival_duration_score, survival_status_score,
+         disease_extent_score, metastasis_score, sample_score,
+         total_score) %>%
+  na.omit()
 
-## Component Score Distributions
-```{r fig.width=12, fig.height=4}
-p13 <- ggplot(data_clean, aes(x = factor(survival_score))) +
-  geom_bar(fill = "steelblue") +
-  labs(title = "Survival Score Distribution",
-       x = "Survival Score (0-3)", y = "Count") +
-  theme_minimal()
+cor_matrix <- cor(numeric_data)
 
-p14 <- ggplot(data_clean, aes(x = factor(disease_score))) +
-  geom_bar(fill = "darkgreen") +
-  labs(title = "Disease Score Distribution",
-       x = "Disease Score (0-2)", y = "Count") +
-  theme_minimal()
-
-p15 <- ggplot(data_clean, aes(x = factor(mets_score))) +
-  geom_bar(fill = "coral") +
-  labs(title = "Metastasis Score Distribution",
-       x = "Metastasis Score (0-1)", y = "Count") +
-  theme_minimal()
-
-grid.arrange(p13, p14, p15, ncol = 3)
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.col = "black", tl.srt = 45,
+         addCoef.col = "black", number.cex = 0.7,
+         title = "Correlation Matrix",
+         mar = c(0,0,2,0))
 ```
 
-## Relationship Between Component Scores and Response Index
-```{r fig.width=12, fig.height=4}
-p16 <- ggplot(data_clean, aes(x = factor(survival_score), y = response_index)) +
-  geom_boxplot(fill = "steelblue") +
-  labs(title = "Response Index by Survival Score",
-       x = "Survival Score", y = "Response Index") +
-  theme_minimal()
-
-p17 <- ggplot(data_clean, aes(x = factor(disease_score), y = response_index)) +
-  geom_boxplot(fill = "darkgreen") +
-  labs(title = "Response Index by Disease Score",
-       x = "Disease Score", y = "Response Index") +
-  theme_minimal()
-
-p18 <- ggplot(data_clean, aes(x = factor(mets_score), y = response_index)) +
-  geom_boxplot(fill = "coral") +
-  labs(title = "Response Index by Metastasis Score",
-       x = "Metastasis Score", y = "Response Index") +
-  theme_minimal()
-
-grid.arrange(p16, p17, p18, ncol = 3)
-```
-
-## Component Contribution Analysis
 ```{r}
-# Calculate correlation of each component with response index
-component_cors <- data_clean %>%
-  summarise(
-    survival_cor = cor(survival_score, response_index),
-    disease_cor = cor(disease_score, response_index),
-    mets_cor = cor(mets_score, response_index)
-  )
+kable(cor_matrix, digits = 3, format = "latex", caption = "Correlation Matrix") %>%
+  kableExtra::kable_styling(latex_options = c("striped", "scale_down", "hold_position"))
+```
+\newpage
+## Multi-Factor Analysis
 
-kable(component_cors, digits = 3, 
-      caption = "Correlation of Component Scores with Response Index")
+### Response by Age and Stage
+
+```{r fig.width=10, fig.height=5}
+ggplot(data_clean, aes(x = age_group, y = response_index, fill = stage_binary)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(title = "Response Index by Age Group and Stage",
+       x = "Age Group", y = "Response Index (0-100)",
+       fill = "Stage") +
+  scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) +
+  theme_minimal()
+
+age_stage_response <- data_clean %>%
+  group_by(age_group, stage_binary) %>%
+  summarise(
+    n = n(),
+    mean_response = mean(response_index),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = stage_binary, 
+              values_from = c(n, mean_response),
+              names_sep = "_")
+
+kable(age_stage_response, digits = 1, 
+      caption = "Response by Age Group and Stage")
 ```
 
-The weighting scheme (3:2:1 for survival:disease:metastasis) is validated by examining how each component correlates with the final response index. Higher correlations indicate stronger influence on the composite score.
+### Response by Cancer Type and Stage
 
- 
+```{r fig.width=12, fig.height=6}
+ggplot(data_clean, aes(x = cancer_simple, y = response_index, fill = stage_binary)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(title = "Response Index by Cancer Type and Stage",
+       x = "Cancer Type", y = "Response Index (0-100)",
+       fill = "Stage") +
+  scale_fill_manual(values = c("Early" = "lightblue", "Advanced" = "darkred")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Response Distribution Across Multiple Factors
+
+```{r fig.width=12, fig.height=8}
+ggplot(data_clean, aes(x = response_category, fill = response_category)) +
+  geom_bar(alpha = 0.8) +
+  facet_grid(stage_binary ~ age_group) +
+  labs(title = "Response Category Distribution by Stage and Age Group",
+       x = "Response Category", y = "Count") +
+  scale_fill_brewer(palette = "RdYlGn") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+```
+\newpage
+
+# Summary of Findings
+
+## Enhanced Response Proxy
+
+To approximate treatment response using available variables, a composite response index was constructed incorporating five clinically relevant components:
+
+1. **Survival Duration** (0–4 points): Categorized using survival quartiles to account for right-skewed distribution.
+2. **Survival Status** (0–2 points): Differentiating between living and deceased patients.
+3. **Disease Extent** (0–3 points): Reflecting tumor spread (localized, regional, distant).
+4. **Metastasis Status** (0–2 points): Binary indicator of metastatic disease.
+5. **Sample Type** (0–1 point): Primary versus metastatic sample source.
+
+The total score (0–12) was scaled to a 0–100 index for interpretability. This multi-dimensional construction provides a more comprehensive proxy than survival-only measures by incorporating both outcome duration and disease severity indicators.
+
+It is important to emphasize that this index is an analytical construct developed for exploratory purposes and does not represent a clinically validated response endpoint.
+
+
+\newpage
+## Key Exploratory Findings
+
+### Clinical Variables
+
+Exploratory comparisons reveal substantial variation in response index values across clinical subgroups.
+
+**Disease Stage** shows the clearest separation:
+- Early-stage patients exhibit notably higher mean response values.
+- Advanced-stage patients show consistently lower response scores.
+- Distribution plots indicate meaningful separation between these categories.
+
+**Cancer Type** demonstrates considerable heterogeneity:
+- Certain cancer types (e.g., prostate and breast) display higher average response values.
+- Others (e.g., pancreatic cancer) show comparatively lower response scores.
+
+**Disease Extent** presents a clear gradient pattern:
+- Localized disease is associated with higher response scores.
+- Regional and distant categories show progressively reduced values.
+
+**Metastasis Status** is strongly associated with reduced response scores, consistent with more advanced disease progression.
+
+\newpage
+
+### Demographic Variables
+
+In contrast to clinical characteristics:
+
+- **Age** shows modest variation, with slightly higher response scores among younger patients.
+- **Sex** demonstrates minimal difference in response distributions.
+
+These findings suggest that within this dataset, clinical disease characteristics are more strongly associated with variation in the constructed response index than demographic attributes.
+
+\newpage
+
+## Conclusions Drawn from the Results
+
+Based on the exploratory analysis, several conclusions can be drawn:
+
+1. Variation in the constructed response index is primarily associated with clinical disease severity indicators rather than demographic characteristics.
+2. Disease stage and metastasis status demonstrate the strongest observable gradients in response patterns.
+3. Cancer type contributes meaningful heterogeneity, suggesting biological and pathological differences influence outcome variation.
+4. The multi-component response proxy appears internally consistent and aligns with expected clinical progression patterns.
+5. Even in the absence of formal modeling, systematic EDA can reveal clear structural patterns within clinical datasets.
+
+However, these conclusions are descriptive rather than causal. The observed associations indicate relationships within the dataset but do not establish underlying mechanisms or treatment effects.
+
+\newpage
+
+## Limitations
+
+Several limitations must be acknowledged:
+
+- The response measure is a constructed proxy rather than a direct clinical endpoint.
+- Missing data required filtering, resulting in analysis of a subset of the original dataset.
+- Disease extent classification relied partially on text-based inference, which may introduce misclassification bias.
+- The cross-sectional structure limits evaluation of longitudinal treatment response dynamics.
+- No inferential statistical testing was performed.
+
+\newpage
+
+# Personal Reflection
+
+This project provided valuable experience in conducting structured exploratory data analysis within R. One of the most beneficial aspects was the systematic data cleaning and transformation process. Working with a high-dimensional clinical dataset reinforced the importance of understanding variable structure, missingness patterns, and data consistency before proceeding to analysis.
+
+The use of **RStudio** significantly improved workflow organization. The integrated environment made it easier to manage scripts, visualize outputs, and debug errors efficiently. Chunk-based execution within the R Notebook helped maintain logical separation between preprocessing, feature engineering, and visualization steps.
+
+The `dplyr` package was particularly effective for data manipulation. Its pipe-based syntax enabled clear and readable transformation pipelines. Sequential filtering, mutation, grouping, and summarization operations were expressed in a way that closely mirrored analytical reasoning. However, complex feature engineering—especially parsing text fields for disease extent—required careful debugging and iterative refinement. Small syntax errors in chained operations occasionally propagated through later steps, highlighting the need for incremental validation.
+
+Visualization using `ggplot2` was one of the strongest aspects of the project. The grammar-of-graphics approach allowed layered construction of plots, making subgroup comparisons intuitive and visually interpretable. Boxplots and distribution visualizations effectively highlighted gradients across stage and metastasis categories. Nevertheless, fine-tuning aesthetics, scales, and factor ordering required additional time to ensure clarity and professional presentation.
+
+One challenge was designing the composite response proxy. Determining appropriate scoring ranges and weighting components required balancing interpretability with distributional fairness. The decision to use survival quartiles rather than raw survival time improved robustness but required validation through correlation checks and distribution inspection.
+
+A key lesson from this project is the importance of transparency in derived metrics. Constructed indices must be clearly documented and validated descriptively to avoid misleading interpretations. Additionally, exploratory analysis can reveal substantial insight without requiring predictive modeling, particularly when the objective is pattern identification rather than prediction.
+
+For future data programming projects,We would prioritize modular code structure, incorporate intermediate validation checks more systematically, and document transformation logic more explicitly to improve reproducibility and maintainability.
+
+\newpage
+
+# Future Work
+
+Several extensions could strengthen and expand this analysis.
+
+First, formal survival analysis methods such as Kaplan–Meier estimation or Cox proportional hazards modeling could provide more rigorous outcome evaluation. While modeling was beyond the scope of this exploratory study, incorporating time-to-event analysis would improve clinical interpretability.
+
+Second, sensitivity analysis of the response proxy weighting scheme could assess robustness. Testing alternative component weights or scoring structures would help determine how stable the response index remains under different assumptions.
+
+Third, incorporating additional biomarkers—such as genomic indicators or molecular subtype information—could enhance the granularity of the response proxy.
+
+Fourth, more advanced natural language processing techniques could replace keyword-based text parsing to improve disease extent classification accuracy. Also we can use an apprpriate Machine Learning model to predict response proxy and validate it.
+
+From a technical perspective, the notebook could be made more sustainable and scalable by:
+
+- Converting feature engineering steps into reusable functions.
+- Parameterizing thresholds (e.g., missingness cutoff, scoring weights).
+- Implementing automated data validation checks.
+- Structuring the project using a reproducible workflow framework (e.g., project-based directory structure with separate scripts).
+- Adding summary tables that automatically update when new data is introduced.
+
+These improvements would increase reproducibility, adaptability, and long-term usability of the analytical framework.
+
+
+**End of Analysis**
