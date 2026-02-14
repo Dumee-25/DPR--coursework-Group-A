@@ -2,7 +2,6 @@
 title: "DS202.3 - Data Programming In R: Coursework - Group A"
 author: "Member 1: KADP Kumarapeli (36431) , Member 2: RKG Tharishika (36508) "
 date: "14th February 2026"
-logo: "C:\\Users\\dumin\\Downloads\\Picture1.png"
 output:
   pdf_document:
     extra_dependencies: ["booktabs", "longtable", "array", "multirow", "wrapfig", "float", "colortbl", "pdflscape", "tabu", "threeparttable", "threeparttablex", "environ", "tcolorbox", "makecell", "xcolor"]
